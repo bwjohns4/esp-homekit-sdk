@@ -1,0 +1,140 @@
+========================================
+Ultra-Isolated ESP8266 Toolchain Setup
+========================================
+
+Installation location: /Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools
+Everything will be contained in this folder.
+To remove: rm -rf /Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools
+
+Checking Homebrew dependencies...
+Installing minimal dependencies via Homebrew...
+✔︎ JSON API cask.jws.json
+✔︎ JSON API formula.jws.json
+==> Fetching downloads for: cmake, ninja and python@3.14
+✔︎ Bottle Manifest cmake (4.1.2)
+✔︎ Bottle Manifest ninja (1.13.1)
+✔︎ Bottle Manifest python@3.14 (3.14.0_1)
+✔︎ Bottle Manifest openssl@3 (3.6.0)
+✔︎ Bottle Manifest ca-certificates (2025-11-04)
+✔︎ Bottle Manifest readline (8.3.1)
+✔︎ Bottle Manifest sqlite (3.51.0)
+✔︎ Bottle ca-certificates (2025-11-04)
+✔︎ Bottle ninja (1.13.1)
+✔︎ Bottle readline (8.3.1)
+✔︎ Bottle sqlite (3.51.0)
+✔︎ Bottle openssl@3 (3.6.0)
+✔︎ Bottle cmake (4.1.2)
+✔︎ Bottle python@3.14 (3.14.0_1)
+==> Pouring cmake--4.1.2.arm64_sequoia.bottle.tar.gz
+==> Caveats
+To install the CMake documentation, run:
+  brew install cmake-docs
+==> Summary
+🍺  /opt/homebrew/Cellar/cmake/4.1.2: 3,913 files, 61.4MB
+==> Running `brew cleanup cmake`...
+Disable this behaviour by setting `HOMEBREW_NO_INSTALL_CLEANUP=1`.
+Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+==> Pouring ninja--1.13.1.arm64_sequoia.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/ninja/1.13.1: 10 files, 450.2KB
+==> Running `brew cleanup ninja`...
+==> Installing dependencies for python@3.14: openssl@3, readline and sqlite
+==> Installing python@3.14 dependency: openssl@3
+==> Pouring openssl@3--3.6.0.arm64_sequoia.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/openssl@3/3.6.0: 7,609 files, 37.7MB
+==> Installing python@3.14 dependency: readline
+==> Pouring readline--8.3.1.arm64_sequoia.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/readline/8.3.1: 56 files, 2.7MB
+==> Installing python@3.14 dependency: sqlite
+==> Pouring sqlite--3.51.0.arm64_sequoia.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/sqlite/3.51.0: 13 files, 5.2MB
+==> Installing python@3.14
+==> Pouring python@3.14--3.14.0_1.arm64_sequoia.bottle.tar.gz
+Warning: These files were overwritten during the `brew link` step:
+/opt/homebrew/bin/idle3
+/opt/homebrew/bin/pip3
+/opt/homebrew/bin/pydoc3
+/opt/homebrew/bin/python3
+/opt/homebrew/bin/python3-config
+/opt/homebrew/bin/wheel3
+/opt/homebrew/share/man/man1/python3.1
+/opt/homebrew/lib/pkgconfig/python3-embed.pc
+/opt/homebrew/lib/pkgconfig/python3.pc
+/opt/homebrew/Frameworks/Python.framework/Headers
+/opt/homebrew/Frameworks/Python.framework/Python
+/opt/homebrew/Frameworks/Python.framework/Resources
+/opt/homebrew/Frameworks/Python.framework/Versions/Current
+
+They have been backed up to: /Users/byronjohnson/Library/Caches/Homebrew/Backup
+==> Caveats
+Python is installed as
+  /opt/homebrew/bin/python3
+
+Unversioned symlinks `python`, `python-config`, `pip` etc. pointing to
+`python3`, `python3-config`, `pip3` etc., respectively, are installed into
+  /opt/homebrew/opt/python@3.14/libexec/bin
+
+`idle3.14` requires tkinter, which is available separately:
+  brew install python-tk@3.14
+
+See: https://docs.brew.sh/Homebrew-and-Python
+==> Summary
+🍺  /opt/homebrew/Cellar/python@3.14/3.14.0_1: 3,759 files, 73.0MB
+==> Running `brew cleanup python@3.14`...
+==> Caveats
+Emacs Lisp files have been installed to:
+  /opt/homebrew/share/emacs/site-lisp/cmake
+zsh completions have been installed to:
+  /opt/homebrew/share/zsh/site-functions
+==> cmake
+To install the CMake documentation, run:
+  brew install cmake-docs
+==> python@3.14
+Python is installed as
+  /opt/homebrew/bin/python3
+
+Unversioned symlinks `python`, `python-config`, `pip` etc. pointing to
+`python3`, `python3-config`, `pip3` etc., respectively, are installed into
+  /opt/homebrew/opt/python@3.14/libexec/bin
+
+`idle3.14` requires tkinter, which is available separately:
+  brew install python-tk@3.14
+
+See: https://docs.brew.sh/Homebrew-and-Python
+
+Step 1: Creating isolated directory structure...
+Step 2: Creating isolated Python virtualenv...
+✓ Python virtualenv created
+Step 3: Installing Python packages (isolated to venv)...
+Requirement already satisfied: pip in ./python-venv/lib/python3.14/site-packages (25.3)
+Collecting pyparsing==2.3.1
+  Downloading pyparsing-2.3.1-py2.py3-none-any.whl.metadata (1.0 kB)
+Downloading pyparsing-2.3.1-py2.py3-none-any.whl (61 kB)
+Installing collected packages: pyparsing
+Successfully installed pyparsing-2.3.1
+✓ Python packages installed in isolated venv
+
+Step 4: Cloning ESP8266-RTOS-SDK...
+Cloning into 'ESP8266_RTOS_SDK'...
+Submodule 'components/coap/libcoap' (https://jihulab.com/esp-mirror/obgm/libcoap.git) registered for path 'components/coap/libcoap'
+Submodule 'components/json/cJSON' (https://github.com/DaveGamble/cJSON.git) registered for path 'components/json/cJSON'
+Submodule 'components/lwip/lwip' (https://github.com/espressif/esp-lwip.git) registered for path 'components/lwip/lwip'
+Submodule 'components/mbedtls/mbedtls' (https://github.com/espressif/mbedtls.git) registered for path 'components/mbedtls/mbedtls'
+Submodule 'components/mqtt/esp-mqtt' (https://github.com/espressif/esp-mqtt.git) registered for path 'components/mqtt/esp-mqtt'
+Cloning into '/Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools/ESP8266_RTOS_SDK/components/coap/libcoap'...
+Cloning into '/Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools/ESP8266_RTOS_SDK/components/json/cJSON'...
+Cloning into '/Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools/ESP8266_RTOS_SDK/components/lwip/lwip'...
+Cloning into '/Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools/ESP8266_RTOS_SDK/components/mbedtls/mbedtls'...
+Cloning into '/Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools/ESP8266_RTOS_SDK/components/mqtt/esp-mqtt'...
+Submodule path 'components/coap/libcoap': checked out '0dbccca06c3ea75a20ef0a51633eb424a35b5e2a'
+Submodule 'ext/tinydtls' (https://jihulab.com/esp-mirror/eclipse-tinydtls/tinydtls) registered for path 'components/coap/libcoap/ext/tinydtls'
+Cloning into '/Users/byronjohnson/Development/esp-homekit-sdk/.esp-tools/ESP8266_RTOS_SDK/components/coap/libcoap/ext/tinydtls'...
+warning: redirecting to https://jihulab.com/esp-mirror/eclipse-tinydtls/tinydtls.git/
+Submodule path 'components/coap/libcoap/ext/tinydtls': checked out '3b24a701ed5b0785306aa732e739ecb1eb3d03f8'
+Submodule path 'components/json/cJSON': checked out '3c8935676a97c7c97bf006db8312875b4f292f6c'
+Submodule path 'components/lwip/lwip': checked out '4fd84abace0cd8a5a709c194fa54afb3cd39b3f7'
+Submodule path 'components/mbedtls/mbedtls': checked out '9ef92c551eb8d92677034c3ec8078a8076febf41'
+Submodule path 'components/mqtt/esp-mqtt': checked out '01594bf118ae502b5a0ead040446f2be75d26223'
+✓ SDK cloned
+Step 5: Installing ESP8266 toolchain...
+Installing ESP-IDF tools
+ERROR: Platform Darwin-arm64 appears to be unsupported

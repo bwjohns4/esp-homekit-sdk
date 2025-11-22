@@ -1,0 +1,247 @@
+Ahhh, perfect — 4MB flash changes the game in your favor. 😈
+
+Now your exact partition table is actually reasonable, and you can have proper OTA (ota_0 / ota_1) in the new HomeKit firmware.
+
+Let me lay out:
+	1.	✅ Validate your partition table on 4MB
+	2.	🎯 What Espressif officially says for “old SDK → new IDF-style” FOTA
+	3.	🧨 A concrete migration plan for your 200+ plugs (one-time OTA, high risk allowed)
+
+⸻
+
+1. Your partition table does fit in 4MB
+
+You gave:
+
+# Name,   Type, SubType, Offset,  Size,   Flags
+sec_cert,  0x3F, ,0xd000,    0x3000,
+nvs,      data, nvs,     0x10000,   0x6000,
+otadata,  data, ota,     ,          0x2000
+phy_init, data, phy,     ,          0x1000,
+ota_0,    app,  ota_0,   0x20000,   1600K,
+ota_1,    app,  ota_1,   ,          1600K,
+factory_nvs, data,   nvs,     0x340000,  0x6000
+nvs_keys, data, nvs_keys,0x346000,  0x1000
+
+Let’s sanity check addresses assuming 4MB (= 0x400000) flash:
+	•	ota_0: offset 0x20000, size 0x190000 (1600K)
+	•	ends at 0x20000 + 0x190000 = 0x1B0000
+	•	ota_1: offset 0x1B0000, size 0x190000
+	•	ends at 0x1B0000 + 0x190000 = 0x340000
+	•	factory_nvs: 0x340000–0x345FFF
+	•	nvs_keys: 0x346000–0x346FFF
+	•	System RF params on 4MB ESP8266 typically live near the very top of flash, e.g. around 0x3FB000..0x3FFFFF.
+
+So you’ve:
+	•	Bootloader at 0x0000
+	•	Partition table at 0x8000  ￼
+	•	Data (sec_cert, nvs, otadata, phy_init) in the first 64K region
+	•	Two 1600K OTA slots fully contained below 0x340000
+	•	Extra NVS + keys around 0x340000+
+	•	Plenty of unused gap before RF/system parameter area at the top
+
+Conclusion: For a 4MB ESP8266, your partition table is totally valid and leaves room for system params at the end. You can keep this layout.
+
+⸻
+
+2. Espressif’s official path: FOTA from “old SDK” → new IDF-style
+
+Espressif literally has a guide titled “FOTA from an Old SDK to the New ESP8266 RTOS SDK (IDF Style)”.  ￼
+
+They frame it as:
+	•	Old world:
+	•	Boot (4 KB), APP1, APP2, System Params (16 KB)
+	•	This is basically what your old Arduino/Non-OS firmware looks like: bootloader + two app slots + sys params.
+	•	New world (IDF style):
+	•	Boot (16 KB) at 0x0000
+	•	Partition table at 0x8000
+	•	NVS / other data
+	•	APP1 / APP2 (OTA) as defined in the CSV
+
+Their FOTA approach:
+	1.	In the old firmware, download a packed “new firmware” blob into flash (into the old APP space).
+	2.	That packed blob includes: new bootloader, new partition table, new app(s).
+	3.	New bootloader, once started, unpacks and writes those into their final locations (boot @ 0x0000, part table @ 0x8000, apps @ ota_0/ota_1, etc).  ￼
+
+They even ship examples under:
+	•	examples/system/ota/native_ota/2+MB_flash/new_to_new_with_old (for 2MB+ flash).  ￼
+
+That’s basically “exactly your use case” with a reference implementation.
+
+So you have two main options:
+	•	Use Espressif’s official FOTA-from-old example as the base and graft your HomeKit firmware into it, or
+	•	Roll your own “migrator” app (which is conceptually simpler for you, since you don’t care about perfection or a few bricks).
+
+Given your tolerance for risk and that you just want to force these into HomeKit mode, rolling your own migrator is fine, but knowing there’s an official pattern may save some time.
+
+⸻
+
+3. Concrete “one-time OTA migration” plan for your 4MB plugs
+
+3.1 Big picture
+
+You will:
+	1.	Build your HomeKit firmware in ESP8266-RTOS with your CSV (the one above) and 4MB flash config.
+	2.	Take its bootloader.bin, partition-table.bin, and one app image (ota_0 initial image).
+	3.	Build an intermediate “migrator” firmware using the old KC toolchain (Arduino / Non-OS), but:
+	•	Bundling those three binaries inside it (or able to download them).
+	•	Using ESP.flashEraseSector / ESP.flashWrite to rewrite the bottom of flash.
+	4.	OTA your migrator onto all plugs using your existing KC OTA path.
+	5.	Migrator runs once → overwrites:
+	•	0x0000: new bootloader
+	•	0x8000: partition table
+	•	0x20000: ota_0 (1600K app)
+	•	nvs / sec_cert etc as needed
+	6.	Migrator reboots → from then on, the device boots as a normal ESP8266-RTOS / IDF HomeKit plug with OTA slots (ota_0/ota_1) and your HomeKit firmware.
+
+If a few die during this, they go in the “surgery failed” bin and you were going to trash them anyway.
+
+⸻
+
+3.2 Build the new HomeKit firmware (IDF side)
+
+In your ESP8266-RTOS project:
+	1.	idf.py menuconfig:
+	•	Serial flasher config → Flash size → 4MB
+	•	Partition table → Custom partition table CSV → point at your CSV above.
+	2.	Enable “Two OTA app” style (either via your CSV or config).
+	3.	Build:
+
+idf.py build
+
+You’ll get:
+	•	build/bootloader/bootloader.bin
+	•	build/partition_table/partition-table.bin
+	•	build/your_app.bin (the image that will go into ota_0 at 0x20000)
+
+Note: For 4MB, Espressif’s 2+MB OTA examples use ota_0 @ 0x10000, ota_1 @ 0x110000 by default.  ￼
+Your layout uses ota_0 @ 0x20000 instead, which is fine as long as:
+	•	The CSV and build config agree, and
+	•	You flash the app at that address.
+
+⸻
+
+3.3 Where is your current firmware (old KC) living?
+
+With Arduino core & eagle.flash.2m.ld you’re effectively using a 2MB layout on a 4MB chip:  ￼
+	•	Bootloader at 0x0000
+	•	First app slot (user1) near 0x01000
+	•	Second app slot (user2 / OTA) at ~0x101000
+	•	Filesystem & “system params” near top of that region
+	•	The upper 2MB (0x200000–0x3FFFFF) is mostly unused by Arduino core, aside from RF/system params at the very top of 4MB.
+
+The important bit: the app code runs from the irom-mapped region (0x4020xxxx), not from 0x0000, so you can safely erase/write the first few hundred KB of flash while that app is running.
+
+⸻
+
+3.4 The migrator firmware (old SDK / Arduino style)
+
+You’ll build this with your existing KC environment so you can push it OTA once.
+
+Core responsibilities:
+	1.	Bring Wi-Fi up and talk to your OTA / HTTP endpoint (reuse your existing logic).
+	2.	Obtain new firmware artifacts:
+	•	simplest: embed bootloader.bin, partition-table.bin, ota_0.bin as C arrays; OR
+	•	stream them from a server into flash.
+	3.	Flash them to their IDF addresses:
+	•	Bootloader → 0x0000
+	•	Partition table → 0x8000
+	•	sec_cert / nvs / otadata / phy_init / factory_nvs / nvs_keys as configured
+	•	ota_0 → 0x20000 (1600K)
+	4.	Optionally erase any Arduino EEPROM / WiFi config sectors you no longer want.
+	5.	ESP.restart().
+
+Example flash writer (Arduino-style pseudocode)
+
+#include <ESP8266WiFi.h>
+
+extern const uint8_t bootloader_bin[];
+extern const size_t  bootloader_len;
+extern const uint8_t parttbl_bin[];
+extern const size_t  parttbl_len;
+extern const uint8_t ota0_bin[];
+extern const size_t  ota0_len;
+
+static void flash_write_region(uint32_t addr, const uint8_t* data, size_t len) {
+    const uint32_t sectorSize = 4096;
+    uint32_t startSector = addr / sectorSize;
+    uint32_t endSector   = (addr + len - 1) / sectorSize;
+
+    for (uint32_t s = startSector; s <= endSector; s++) {
+        ESP.flashEraseSector(s);
+    }
+
+    uint8_t buf[256];
+    uint32_t dst = addr;
+    size_t pos = 0;
+    size_t paddedLen = (len + 3) & ~3;  // multiple of 4
+
+    while (pos < paddedLen) {
+        size_t chunk = min(sizeof(buf), paddedLen - pos);
+        memset(buf, 0xFF, chunk);
+        size_t toCopy = min(chunk, len - pos);
+        memcpy(buf, data + pos, toCopy);
+
+        ESP.flashWrite(dst, reinterpret_cast<uint32_t*>(buf), chunk);
+        dst += chunk;
+        pos += chunk;
+    }
+}
+
+void do_migration() {
+    // Optional: check flash is 4MB
+    if (ESP.getFlashChipRealSize() != 4 * 1024 * 1024) {
+        // bail or handle separately
+    }
+
+    // Write core IDF pieces
+    flash_write_region(0x0000,  bootloader_bin, bootloader_len);
+    flash_write_region(0x8000,  parttbl_bin,    parttbl_len);
+
+    // Data partitions (adjust sizes/offsets if you change CSV)
+    // nvs @ 0x10000 (0x6000), sec_cert @ 0xd000 (0x3000), etc
+    // Optionally just leave them erased and let your app init them.
+
+    flash_write_region(0x20000, ota0_bin, ota0_len);   // ota_0 app
+
+    // Optionally erase old system-param area, or leave as-is
+
+    ESP.restart();  // jump into IDF bootloader now living at 0x0000
+}
+
+Because this is running from the old app in its own region, you’re free to wipe 0x0000–0x20xxxx without self-destructing mid-write. Worst case, power loss while flashing = brick → UART pin-jig later if you care.
+
+⸻
+
+3.5 Deployment flow for your 200+ plugs
+	1.	Build & test:
+	•	Flash one sacrificial plug via UART with:
+	•	your existing KC firmware + OTA, then
+	•	the migrator over OTA, and confirm it flips into HomeKit / IDF layout reliably.
+	2.	Once happy, publish the migrator OTA to a small batch (5–10 units) via your normal KC cloud update mechanism.
+	3.	Verify they come back up as HomeKit plugs:
+	•	Check Wi-Fi / mDNS / HAP pairing, etc.
+	•	Confirm esp8266-rtos-sdk logs show the new partition table (boot log prints the table).  ￼
+	4.	Roll out to all 200+ units.
+
+From that moment, you’re in normal IDF-land:
+	•	ota_0 / ota_1 updates using esp_https_ota or equivalent.  ￼
+	•	nvs, sec_cert, otadata work as your HomeKit stack expects.
+
+⸻
+
+4. If you want to lean on Espressif’s official FOTA flow
+
+If you’d rather not hand-roll the “write bootloader & partitions yourself” logic, you can:
+	•	Start from ESP8266 RTOS SDK example:
+examples/system/ota/native_ota/2+MB_flash/new_to_new_with_old  ￼
+	•	Build your HomeKit app in that structure so that:
+	•	The “old” firmware (your KC build) does HTTP download of a packed new firmware blob.
+	•	New bootloader then unpacks it and writes it to proper partitions.
+	•	This is more “enterprise safe,” but honestly your tolerance for bricking + desire for a one-and-done migration makes the custom migrator simpler.
+
+⸻
+
+If you’d like, I can next:
+	•	Draft a minimal platformio.ini / board config for the migrator build, and
+	•	Give you an example bootloader_bin[]/ota0_bin[] conversion step (xxd -i etc) so your team can just drop files in and compile.
