@@ -1,0 +1,6 @@
+.pio/
+.vscode/
+build/
+*.bin
+binaries/*.bin
+src/idf_binaries.cpp.bak

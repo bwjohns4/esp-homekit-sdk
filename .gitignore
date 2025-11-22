@@ -1,41 +1,28 @@
-.config
-*.o
+# Isolated toolchain (safe to delete anytime)
+.esp-tools/
+
+# Build artifacts
+build/
+*.bin
+*.elf
+*.map
+
+# Python
+__pycache__/
 *.pyc
+.venv/
+venv/
 
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
 
-# Example project files
-examples/**/sdkconfig
-examples/**/sdkconfig.old
-examples/**/build
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# emacs
-.dir-locals.el
-
-# eclipse setting
-.settings
-
-# vscode
-.vscode
-
-# Doc build artifacts
-docs/*/_build/
-docs/*/doxygen-warning-log.txt
-docs/*/sphinx-warning-log.txt
-docs/*/sphinx-warning-log-sanitized.txt
-docs/*/xml/
-docs/*/xml_in/
-docs/*/man/
-docs/doxygen_sqlite3.db
-
-# MacOS directory files
+# OS
 .DS_Store
-
-# Tools
-tools/factory_nvs_gen/*.bin
-tools/factory_nvs_gen/*.csv
-
-# Patch files
-*.patch
-
-#CTags
-tags
