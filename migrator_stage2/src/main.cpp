@@ -157,10 +157,12 @@ void IRAM_ATTR erase_sector_7_iram() {
 
 /**
  * IRAM function to erase partition table sectors (at 0x8000)
+ * Must be called from flash code BEFORE we touch the table,
+ * but actual erase happens entirely in IRAM.
  */
 void IRAM_ATTR erase_partition_sectors_iram() {
-    // 0x8000 = sector 32
-    SPIEraseSector(32);
+    // 0x8000 / 4096 = sector 8
+    SPIEraseSector(8);
 
     // Wait for erase (1M NOPs like working single-sector test)
     for(volatile uint32_t i = 0; i < 1000000; i++) {
@@ -201,13 +203,13 @@ void IRAM_ATTR erase_all_bootloader_sectors_iram() {
 // No longer needed - installer does everything from IRAM
 
 /**
- * Erase partition table using ROM function from IRAM
+ * Erase partition table using official spi_flash API (NO IRAM NEEDED)
  */
 bool erasePartitionTable() {
-    Serial.println("Erasing partition table (sector 32)...");
+    Serial.println("Erasing partition table (sector 8 via IRAM)...");
     Serial.flush();
 
-    erase_partition_sectors_iram();
+    erase_partition_sectors_iram();  // IRAM function does SPIEraseSector(8)
     delay(100);
 
     Serial.println("OK Partition table erased");
@@ -215,11 +217,14 @@ bool erasePartitionTable() {
 }
 
 /**
- * Write to flash using IRAM ROM function (works with unerased sectors!)
+ * Write to flash using spi_flash_write (NO IRAM NEEDED for partition/app)
  */
 bool writeFlashLowAddr(uint32_t addr, void* data, size_t size) {
-    // Use ROM function - can write to unerased sectors
-    write_flash_iram(addr, data, size);
+    // size must be multiple of 4; caller already pads for that
+    if (spi_flash_write(addr, (uint32_t*)data, size) != SPI_FLASH_RESULT_OK) {
+        Serial.printf("ERROR: spi_flash_write failed at 0x%06X\n", addr);
+        return false;
+    }
     return true;
 }
 
@@ -292,6 +297,19 @@ bool copyPartitionTable(uint32_t srcAddr, uint32_t dstAddr, size_t maxSize) {
     Serial.printf("Copying partition table from 0x%06X to 0x%06X...\n", srcAddr, dstAddr);
     Serial.printf("Will copy %u bytes\n", maxSize);
 
+    // Dump source bytes
+    Serial.println("Dumping first 32 bytes of partition table SOURCE:");
+    uint8_t src_dump[32] = {0};
+    if (spi_flash_read(srcAddr, (uint32_t*)src_dump, sizeof(src_dump)) != SPI_FLASH_RESULT_OK) {
+        Serial.println("ERROR: Failed to read src partition table for dump");
+    } else {
+        for (int i = 0; i < 32; ++i) {
+            if (i % 16 == 0) Serial.println();
+            Serial.printf("%02X ", src_dump[i]);
+        }
+        Serial.println("\n");
+    }
+
     // Erase destination using IRAM function
     if (!erasePartitionTable()) {
         return false;
@@ -328,6 +346,23 @@ bool copyPartitionTable(uint32_t srcAddr, uint32_t dstAddr, size_t maxSize) {
     }
 
     Serial.printf("OK Successfully copied partition table %u bytes\n", maxSize);
+
+    // ---- HEX DUMP OF PARTITION TABLE DESTINATION ----
+    Serial.println("Dumping first 32 bytes of partition table at destination:");
+    uint8_t pt_dump[32] = {0};
+
+    // Use ROM flash read directly to match what the IDF bootloader will see
+    if (spi_flash_read(dstAddr, (uint32_t*)pt_dump, sizeof(pt_dump)) != SPI_FLASH_RESULT_OK) {
+        Serial.println("ERROR: Failed to read back partition table for dump");
+    } else {
+        for (int i = 0; i < 32; ++i) {
+            if (i % 16 == 0) Serial.println();
+            Serial.printf("%02X ", pt_dump[i]);
+        }
+        Serial.println("\n");
+    }
+    // -----------------------------------------------
+
     return true;
 }
 
