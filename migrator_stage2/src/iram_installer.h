@@ -1,5 +1,5 @@
 /*
- * IRAM-ONLY bootloader installer
+ * IRAM-ONLY bootloader + partition installer
  * This ENTIRE module runs from IRAM with NO flash access
  */
 
@@ -23,15 +23,26 @@ extern "C" {
 
 // Installer parameters (passed from main code)
 struct installer_params {
-    const uint8_t *bootloader_data;  // Pointer to bootloader in RAM
-    uint32_t bootloader_size;        // Size in bytes
-    uint32_t target_addr;            // Where to write (should be 0)
+    // Bootloader
+    const uint8_t *bootloader_data;   // Pointer to bootloader in RAM
+    uint32_t       bootloader_size;   // Size in bytes
+    uint32_t       bootloader_target; // Where to write (should be 0)
+
+    // Partition table
+    const uint8_t *partition_data;    // Pointer to partition table in RAM
+    uint32_t       partition_size;    // Size in bytes (e.g. 4096)
+    uint32_t       partition_target;  // Where to write (0x00008000)
 };
 
 /**
  * IRAM-ONLY installer function
  * Must be copied to IRAM and called with interrupts disabled
  * NO FLASH ACCESS ALLOWED
+ *
+ * This will:
+ *  1. Erase sector for partition table and write it
+ *  2. Erase sectors 0-7 and write bootloader
+ *  3. Reboot
  */
 void IRAM_ATTR install_bootloader_iram(const installer_params *params) {
     // Disable cache completely - no flash reads during this function
@@ -40,29 +51,49 @@ void IRAM_ATTR install_bootloader_iram(const installer_params *params) {
     // Disable interrupts
     asm volatile("rsil a2, 15" : : : "a2");
 
-    // Erase all 8 bootloader sectors (0-7)
-    for (uint32_t sector = 0; sector < 8; sector++) {
-        SPIEraseSector(sector);
-        // Wait for erase to complete (~20-100ms worst case)
-        ets_delay_us(150000);  // 150ms per sector to be safe
-    }
+    // ---------- PARTITION TABLE: erase & write FIRST ----------
+    // Compute partition sector index: partition_target / 4096
+    uint32_t part_sector = params->partition_target / 4096U;  // 0x8000/4096 = 8
 
-    // Write bootloader in 256-byte chunks
-    uint8_t *src = (uint8_t*)params->bootloader_data;  // Cast away const for SPIWrite
-    uint32_t addr = params->target_addr;
-    uint32_t remaining = params->bootloader_size;
+    SPIEraseSector(part_sector);
+    ets_delay_us(5000);  // wait a bit for erase to complete
+
+    uint8_t *src       = (uint8_t*)params->partition_data;
+    uint32_t addr      = params->partition_target;
+    uint32_t remaining = params->partition_size;
 
     while (remaining > 0) {
-        uint32_t chunk = (remaining > 256) ? 256 : remaining;
-
-        // Align to 4 bytes
-        uint32_t aligned_chunk = (chunk + 3) & ~3;
+        uint32_t chunk         = (remaining > 256) ? 256 : remaining;
+        uint32_t aligned_chunk = (chunk + 3U) & ~3U;  // align to 4 bytes
 
         SPIWrite(addr, (void*)src, aligned_chunk);
         ets_delay_us(5000);  // 5ms per chunk
 
-        src += chunk;
-        addr += chunk;
+        src       += chunk;
+        addr      += chunk;
+        remaining -= chunk;
+    }
+
+    // ---------- BOOTLOADER: erase all 8 bootloader sectors (0-7) ----------
+    for (uint32_t sector = 0; sector < 8; sector++) {
+        SPIEraseSector(sector);
+        ets_delay_us(5000);  // wait a bit for each erase
+    }
+
+    // Write bootloader in 256-byte chunks
+    src       = (uint8_t*)params->bootloader_data;  // Cast away const for SPIWrite
+    addr      = params->bootloader_target;
+    remaining = params->bootloader_size;
+
+    while (remaining > 0) {
+        uint32_t chunk         = (remaining > 256) ? 256 : remaining;
+        uint32_t aligned_chunk = (chunk + 3U) & ~3U;
+
+        SPIWrite(addr, (void*)src, aligned_chunk);
+        ets_delay_us(5000);  // 5ms per chunk
+
+        src       += chunk;
+        addr      += chunk;
         remaining -= chunk;
     }
 

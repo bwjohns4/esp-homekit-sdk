@@ -232,33 +232,55 @@ bool writeFlashLowAddr(uint32_t addr, void* data, size_t size) {
  * Install IDF bootloader using IRAM-only installer
  * This reads bootloader into RAM, then jumps to IRAM code
  */
+/**
+ * Install IDF bootloader + partition table using IRAM-only installer.
+ * Reads bootloader and partition table into RAM, then jumps to IRAM code.
+ */
+/**
+ * Install IDF bootloader + partition table using IRAM-only installer.
+ * Reads bootloader and partition table into RAM, then jumps to IRAM code.
+ */
 bool writeBootloaderStub() {
-    const uint32_t srcAddr = SRC_BOOTLOADER;  // 0x100000
-    const size_t maxSize = 32 * 1024;
+    // Bootloader staging
+    const uint32_t boot_src  = SRC_BOOTLOADER;     // 0x100000
+    const size_t   boot_buf  = 32 * 1024;          // 32 KB buffer
+    const size_t   boot_size = 11072;              // actual bootloader size in bytes
 
-    Serial.println("Installing IDF bootloader using IRAM-only installer...");
-    Serial.printf("Reading bootloader from 0x%06X (%u bytes)...\n", srcAddr, maxSize);
+    // Partition table staging
+    const uint32_t part_src  = SRC_PARTITION;      // 0x110000
+    const size_t   part_buf  = MAX_PARTITION_SIZE; // 4096 bytes
+    const size_t   part_size = MAX_PARTITION_SIZE; // write full 4KB
 
-    // Allocate RAM buffer for bootloader
-    static uint8_t bootloader_ram[32768];
+    // RAM buffers
+    static uint8_t bootloader_ram[32 * 1024];
+    static uint8_t partition_ram[MAX_PARTITION_SIZE];
+
+    Serial.println("Installing IDF bootloader + partition via IRAM-only installer...");
+    Serial.printf("Reading bootloader from 0x%06X (%u bytes)...\n", boot_src, (unsigned)boot_buf);
 
     // Read bootloader from flash into RAM
     Serial.println("Loading bootloader into RAM...");
-    if (!ESP.flashRead(srcAddr, reinterpret_cast<uint32_t*>(bootloader_ram), maxSize)) {
+    if (!ESP.flashRead(boot_src, reinterpret_cast<uint32_t*>(bootloader_ram), boot_buf)) {
         Serial.println("ERROR: Failed to read bootloader!");
         return false;
     }
-
     Serial.println("Bootloader loaded into RAM");
+
+    // Read partition table from flash into RAM
+    Serial.printf("Reading partition table from 0x%06X (%u bytes)...\n", part_src, (unsigned)part_buf);
+    if (!ESP.flashRead(part_src, reinterpret_cast<uint32_t*>(partition_ram), part_buf)) {
+        Serial.println("ERROR: Failed to read partition table!");
+        return false;
+    }
+    Serial.println("Partition table loaded into RAM");
     Serial.println("");
     Serial.println("========================================");
     Serial.println("ENTERING IRAM-ONLY INSTALLER");
     Serial.println("========================================");
     Serial.println("The device will:");
-    Serial.println("1. Disable interrupts and cache");
-    Serial.println("2. Erase sectors 0-7");
-    Serial.println("3. Write bootloader");
-    Serial.println("4. Reboot automatically");
+    Serial.println("1. Erase sectors 0-7 and write bootloader");
+    Serial.println("2. Erase sector 8 (0x8000) and write partition table");
+    Serial.println("3. Reboot automatically");
     Serial.println("");
     Serial.println("NO SERIAL OUTPUT during install!");
     Serial.println("Device will reboot in 3 seconds...");
@@ -277,12 +299,15 @@ bool writeBootloaderStub() {
 
     // Set up installer parameters
     installer_params params;
-    params.bootloader_data = bootloader_ram;
-    params.bootloader_size = maxSize;
-    params.target_addr = 0;
+    params.bootloader_data    = bootloader_ram;
+    params.bootloader_size    = (uint32_t)boot_size;
+    params.bootloader_target  = 0x000000;          // bootloader at 0
+
+    params.partition_data     = partition_ram;
+    params.partition_size     = (uint32_t)part_size;
+    params.partition_target   = DST_PARTITION;     // 0x8000
 
     // Call IRAM installer - THIS WILL NOT RETURN
-    // It will erase/write/reboot
     install_bootloader_iram(&params);
 
     // Never reached
@@ -436,15 +461,15 @@ void setup() {
     }
 
     // Step 1: Copy partition table FIRST (fast, safe)
-    Serial.println("\nStep 1: Installing partition table...");
-    Serial.printf("Source: 0x%06X -> Dest: 0x%06X\n", SRC_PARTITION, DST_PARTITION);
-    if (!copyPartitionTable(SRC_PARTITION, DST_PARTITION, MAX_PARTITION_SIZE)) {
-        Serial.println("ERROR: Failed to install partition table!");
-        blinkError();
-        return;
-    }
-    Serial.println("OK Partition table installed\n");
-    blinkLED(1);
+    // Serial.println("\nStep 1: Installing partition table...");
+    // Serial.printf("Source: 0x%06X -> Dest: 0x%06X\n", SRC_PARTITION, DST_PARTITION);
+    // if (!copyPartitionTable(SRC_PARTITION, DST_PARTITION, MAX_PARTITION_SIZE)) {
+    //     Serial.println("ERROR: Failed to install partition table!");
+    //     blinkError();
+    //     return;
+    // }
+    // Serial.println("OK Partition table installed\n");
+    // blinkLED(1);
     yield();
 
     // Step 2: Copy app to OTA_1 (slow but non-critical if it fails)
