@@ -9,6 +9,15 @@ extern "C" {
 
 // IRAM-only installer for bootloader (NO flash access during install)
 #include "iram_installer.h"
+#include "RawFlashWriter.h"
+
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <Updater.h>
+
+const char* WIFI_SSID = "Ricaroni";
+const char* WIFI_PASSWORD = "Ehouse2613";
 
 // SDK functions are already declared in flash.h (included via Arduino.h)
 // int SPIEraseAreaEx(const uint32_t start, const uint32_t size);
@@ -23,13 +32,26 @@ extern "C" {
 
 // Destination addresses (IDF layout)
 #define DST_PARTITION    0x8000
-#define DST_APP          0x1B0000  // OTA_1 (we're running from OTA_0)
+#define DST_APP          0x220000  // OTA_1 (we're running from OTA_0)
+#define APP_DST_ADDR     DST_APP      // 0x220000
+#define APP_SIZE         907552       // exact file length in bytes
 
 // Sizes
 #define MAX_PARTITION_SIZE   (4 * 1024)    // 4KB
 #define MAX_APP_SIZE         (1600 * 1024) // 1600KB
 
 #define SECTOR_SIZE 4096
+
+// Binary download URLs
+#ifndef BINARY_SERVER_URL
+#define BINARY_SERVER_URL "http://192.168.1.159:8700"
+#endif
+
+const char* BOOTLOADER_URL = BINARY_SERVER_URL "/bootloader.bin";
+const char* PARTITION_URL = BINARY_SERVER_URL "/partitions_hap.bin";
+const char* APP_URL = BINARY_SERVER_URL "/smart_outlet.bin";
+
+#define ADDR_APP_STAGE   0x220000
 
 void blinkLED(int times, int delayMs = 200) {
     for (int i = 0; i < times; i++) {
@@ -392,48 +414,163 @@ bool copyPartitionTable(uint32_t srcAddr, uint32_t dstAddr, size_t maxSize) {
 }
 
 /**
+ * Download and write to flash using RawFlashWriter (for non-app binaries)
+ * Uses battle-tested Updater logic without image validation
+ */
+bool downloadAndFlashManual(const char* url, uint32_t addr) {
+    WiFiClient client;
+    HTTPClient http;
+
+    Serial.printf("Downloading from %s...\n", url);
+
+    if (!http.begin(client, url)) {
+        Serial.println("ERROR: Failed to begin HTTP request");
+        return false;
+    }
+
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK) {
+        Serial.printf("ERROR: HTTP GET failed, code: %d\n", httpCode);
+        http.end();
+        return false;
+    }
+
+    size_t totalSize = http.getSize();
+    if (totalSize <= 0) {
+        Serial.println("ERROR: Invalid content length");
+        http.end();
+        return false;
+    }
+
+    Serial.printf("File size: %u bytes\n", totalSize);
+    Serial.printf("Writing to flash address: 0x%06X\n", addr);
+
+    // Initialize RawFlashWriter
+    RawFlashWriter writer;
+    if (!writer.begin(totalSize, addr)) {
+        Serial.println("ERROR: Failed to initialize RawFlashWriter");
+        http.end();
+        return false;
+    }
+
+    // Stream download and write (RawFlashWriter handles erase automatically)
+    Serial.println("Downloading and writing (auto-erasing at sector boundaries)...");
+    WiFiClient* stream = http.getStreamPtr();
+    uint8_t buf[512];
+    size_t written = 0;
+    bool firstChunkLogged = false;
+
+    while (http.connected() && written < totalSize) {
+        size_t available = stream->available();
+        if (available) {
+            size_t toRead = min(available, sizeof(buf));
+            toRead = min(toRead, totalSize - written);
+
+            size_t bytesRead = stream->readBytes(buf, toRead);
+            if (bytesRead == 0) break;
+
+        if (!firstChunkLogged) {
+            Serial.println("First 16 bytes from HTTP:");
+            for (int i = 0; i < 16 && i < (int)bytesRead; i++) {
+                Serial.printf("%02X ", buf[i]);
+            }
+            Serial.println();
+            firstChunkLogged = true;
+        }
+
+            // RawFlashWriter handles erase and watchdog automatically
+            size_t bytesWritten = writer.write(buf, bytesRead);
+            if (bytesWritten != bytesRead) {
+                Serial.printf("ERROR: Write failed at offset %u (error: %d)\n", written, writer.getError());
+                http.end();
+                return false;
+            }
+
+            written += bytesWritten;
+
+            if (written % 4096 == 0 || written >= totalSize) {
+                digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+                Serial.printf("  Progress: %u / %u bytes (%.1f%%)\n",
+                             written, totalSize, (written * 100.0) / totalSize);
+            }
+        }
+        yield();
+    }
+
+    http.end();
+
+    if (written != totalSize) {
+        Serial.printf("ERROR: Incomplete download - got %u of %u bytes\n", written, totalSize);
+        return false;
+    }
+
+    // Finalize write
+    if (!writer.end()) {
+        Serial.printf("ERROR: Failed to finalize write (error: %d)\n", writer.getError());
+        return false;
+    }
+
+    Serial.printf("✓ Successfully wrote %u bytes to 0x%06X\n", written, addr);
+    return true;
+}
+
+/**
  * Copy app (no erase needed - will be overwriting itself)
  */
-bool copyApp(uint32_t srcAddr, uint32_t dstAddr, size_t maxSize) {
-    Serial.printf("Copying app from 0x%06X to 0x%06X...\n", srcAddr, dstAddr);
-    Serial.printf("Will copy %u bytes (NO ERASE - overwriting self)\n", maxSize);
+bool copyApp(uint32_t srcAddr, uint32_t dstAddr, size_t size) {
+    Serial.printf("Copying app from 0x%06X to 0x%06X using RawFlashWriter...\n",
+                  srcAddr, dstAddr);
+    Serial.printf("App size: %u bytes\n", (unsigned)size);
 
-    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+    RawFlashWriter writer;
+    if (!writer.begin(size, dstAddr)) {
+        Serial.println("ERROR: Failed to init RawFlashWriter for app");
+        return false;
+    }
 
-    // Copy in 256-byte chunks with frequent delay() calls
-    Serial.println("Writing app data (256-byte chunks)...");
-    uint8_t buffer[256];
+    uint8_t buf[512];
     size_t copied = 0;
 
-    while (copied < maxSize) {
-        delay(1);
+    while (copied < size) {
+        delay(1);  // feed WDT
 
-        size_t chunk = min(sizeof(buffer), maxSize - copied);
+        size_t chunk = min(sizeof(buf), size - copied);
 
-        if (!ESP.flashRead(srcAddr + copied, reinterpret_cast<uint32_t*>(buffer), chunk)) {
-            Serial.printf("ERROR: Failed to read at 0x%06X\n", srcAddr + copied);
+        // ESP.flashRead requires length multiple of 4
+        size_t aligned = (chunk + 3U) & ~3U;
+        if (!ESP.flashRead(srcAddr + copied,
+                           reinterpret_cast<uint32_t*>(buf),
+                           aligned)) {
+            Serial.printf("ERROR: Failed to read staged app at 0x%06X\n",
+                          srcAddr + copied);
             return false;
         }
 
-        size_t alignedChunk = (chunk + 3) & ~3;
-        if (alignedChunk > chunk) {
-            memset(buffer + chunk, 0xFF, alignedChunk - chunk);
-        }
-
-        if (!writeFlashLowAddr(dstAddr + copied, buffer, alignedChunk)) {
-            Serial.printf("ERROR: Failed to write at 0x%06X\n", dstAddr + copied);
+        // Only write the real chunk; RawFlashWriter handles padding/alignment
+        size_t written = writer.write(buf, chunk);
+        if (written != chunk) {
+            Serial.printf("ERROR: RawFlashWriter write failed at offset %u (err=%d)\n",
+                          (unsigned)copied, writer.getError());
             return false;
         }
 
-        copied += chunk;
+        copied += written;
 
-        if (copied % (256 * 1024) == 0) {
-            Serial.printf("  Written %u / %u KB\n", copied / 1024, maxSize / 1024);
+        if (copied % (256 * 1024) == 0 || copied == size) {
+            Serial.printf("  App copy progress: %u / %u KB\n",
+                          (unsigned)(copied / 1024),
+                          (unsigned)(size / 1024));
             digitalWrite(LED_PIN, !digitalRead(LED_PIN));
         }
     }
 
-    Serial.printf("OK Successfully copied app %u bytes\n", maxSize);
+    if (!writer.end()) {
+        Serial.printf("ERROR: RawFlashWriter end() failed (err=%d)\n", writer.getError());
+        return false;
+    }
+
+    Serial.printf("OK Successfully copied app %u bytes to 0x%06X\n",
+                  (unsigned)copied, dstAddr);
     return true;
 }
 
@@ -460,6 +597,38 @@ void setup() {
         delay(1000);
     }
 
+    // Step 2: Connect to WiFi
+    Serial.println("Step 2: Connecting to WiFi...");
+    Serial.printf("SSID: %s\n", WIFI_SSID);
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 60) {
+        delay(500);
+        Serial.print(".");
+        attempts++;
+
+        if (attempts % 10 == 0) {
+            digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        }
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("\nERROR: WiFi connection failed!");
+        Serial.printf("SSID: %s\n", WIFI_SSID);
+        Serial.println("Check WiFi credentials and network availability.");
+        blinkError();
+        return;
+    }
+
+    Serial.printf("\n✓ Connected to: %s\n", WiFi.SSID().c_str());
+    Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("Signal: %d dBm\n\n", WiFi.RSSI());
+    blinkLED(2);
+    delay(1000);
+
     // Step 1: Copy partition table FIRST (fast, safe)
     // Serial.println("\nStep 1: Installing partition table...");
     // Serial.printf("Source: 0x%06X -> Dest: 0x%06X\n", SRC_PARTITION, DST_PARTITION);
@@ -473,16 +642,22 @@ void setup() {
     yield();
 
     // Step 2: Copy app to OTA_1 (slow but non-critical if it fails)
-    Serial.println("Step 2: Installing HomeKit app to OTA_1...");
-    Serial.println("NOTE: Writing to OTA_1 (0x1B0000) since we're running from OTA_0");
-    Serial.printf("Source: 0x%06X -> Dest: 0x%06X\n", SRC_APP, DST_APP);
-    if (!copyApp(SRC_APP, DST_APP, MAX_APP_SIZE)) {
-        Serial.println("ERROR: Failed to install app!");
+    // Serial.println("Step 2: Installing HomeKit app to OTA_1...");
+    // Serial.println("NOTE: Writing to OTA_1 (0x1B0000) since we're running from OTA_0");
+    // Serial.printf("Source: 0x%06X -> Dest: 0x%06X\n", SRC_APP, DST_APP);
+    // if (!copyApp(SRC_APP, DST_APP, APP_SIZE)) {
+    //     Serial.println("ERROR: Failed to install app!");
+    //     blinkError();
+    //     return;
+    // }
+    // Serial.println("OK HomeKit app installed to OTA_1\n");
+    // blinkLED(1);
+    Serial.println("Downloading final app to 0x120000...");
+    if (!downloadAndFlashManual(APP_URL, ADDR_APP_STAGE)) {
+        Serial.println("ERROR: Failed to download app!");
         blinkError();
         return;
     }
-    Serial.println("OK HomeKit app installed to OTA_1\n");
-    blinkLED(1);
     yield();
 
     // Step 3: Install IDF bootloader LAST (critical - do this last!)

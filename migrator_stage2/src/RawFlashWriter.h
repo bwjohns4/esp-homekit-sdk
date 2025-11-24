@@ -132,7 +132,7 @@ private:
                 return false;
             }
 
-            //Serial.printf("  ✓ Sector %u erased\n", sector);
+           // Serial.printf("  ✓ Sector %u erased\n", sector);
         }
 
         // Write buffer to flash
