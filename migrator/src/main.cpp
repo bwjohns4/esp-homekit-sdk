@@ -6,6 +6,7 @@
 #include "RawFlashWriter.h"
 
 #define LED_PIN 2  // Onboard LED for status indication
+#define ADDR_APP_STAGE   0x120000
 
 // WiFi credentials
 const char* WIFI_SSID = "Ricaroni";
@@ -113,6 +114,7 @@ bool downloadAndFlash(const char* url, uint32_t addr, size_t expectedSize = 0) {
     WiFiClient* stream = http.getStreamPtr();
     uint8_t buf[512];
     size_t written = 0;
+    bool firstChunkLogged = false;
 
     while (http.connected() && written < totalSize) {
         size_t available = stream->available();
@@ -123,6 +125,15 @@ bool downloadAndFlash(const char* url, uint32_t addr, size_t expectedSize = 0) {
             size_t bytesRead = stream->readBytes(buf, toRead);
             if (bytesRead == 0) break;
 
+
+        if (!firstChunkLogged) {
+            Serial.println("First 16 bytes from HTTP:");
+            for (int i = 0; i < 16 && i < (int)bytesRead; i++) {
+                Serial.printf("%02X ", buf[i]);
+            }
+            Serial.println();
+            firstChunkLogged = true;
+        }
             // Update.write() handles erase and watchdog automatically
             size_t bytesWritten = Update.write(buf, bytesRead);
             if (bytesWritten != bytesRead) {
@@ -205,6 +216,7 @@ bool downloadAndFlashManual(const char* url, uint32_t addr) {
     WiFiClient* stream = http.getStreamPtr();
     uint8_t buf[512];
     size_t written = 0;
+    bool firstChunkLogged = false;
 
     while (http.connected() && written < totalSize) {
         size_t available = stream->available();
@@ -214,6 +226,15 @@ bool downloadAndFlashManual(const char* url, uint32_t addr) {
 
             size_t bytesRead = stream->readBytes(buf, toRead);
             if (bytesRead == 0) break;
+
+        if (!firstChunkLogged) {
+            Serial.println("First 16 bytes from HTTP:");
+            for (int i = 0; i < 16 && i < (int)bytesRead; i++) {
+                Serial.printf("%02X ", buf[i]);
+            }
+            Serial.println();
+            firstChunkLogged = true;
+        }
 
             // RawFlashWriter handles erase and watchdog automatically
             size_t bytesWritten = writer.write(buf, bytesRead);
@@ -376,12 +397,12 @@ void performMigration() {
         return;
     }
 
-    Serial.println("Downloading final app to 0x120000...");
-    if (!downloadAndFlash(APP_URL, 0x120000)) {
-        Serial.println("ERROR: Failed to download app!");
-        blinkError();
-        return;
-    }
+    // Serial.println("Downloading final app to 0x120000...");
+    // if (!downloadAndFlashManual(APP_URL, ADDR_APP_STAGE)) {
+    //     Serial.println("ERROR: Failed to download app!");
+    //     blinkError();
+    //     return;
+    // }
 
     Serial.println("✓ All binaries staged in temp storage\n");
     blinkLED(3);
