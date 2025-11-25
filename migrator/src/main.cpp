@@ -14,7 +14,7 @@ const char* WIFI_PASSWORD = "Ehouse2613";
 
 // Binary download URLs
 #ifndef BINARY_SERVER_URL
-#define BINARY_SERVER_URL "http://192.168.1.159:8700"
+#define BINARY_SERVER_URL "http://api.johnson-creative.com/SmartPlugs/Migration8266"
 #endif
 
 const char* BOOTLOADER_URL = BINARY_SERVER_URL "/bootloader.bin";
@@ -420,7 +420,7 @@ void performMigration() {
     }
     while (Serial.available()) Serial.read(); // Clear buffer
 
-    if (!downloadAndFlash("http://192.168.1.159:8700/stage2.bin", ADDR_OTA_0)) {
+    if (!downloadAndFlash("http://api.johnson-creative.com/SmartPlugs/Migration8266/stage2.bin", ADDR_OTA_0)) {
         Serial.println("ERROR: Failed to download/write stage 2!");
         blinkError();
         return;
