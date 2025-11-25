@@ -16,7 +16,7 @@ extern "C" {
 #include <WiFiClient.h>
 #include <Updater.h>
 
-const char* WIFI_SSID = "Ricaroni";
+const char* WIFI_SSID = "KCLabRouter";
 const char* WIFI_PASSWORD = "Ehouse2613";
 
 // SDK functions are already declared in flash.h (included via Arduino.h)

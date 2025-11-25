@@ -9,7 +9,7 @@
 #define ADDR_APP_STAGE   0x120000
 
 // WiFi credentials
-const char* WIFI_SSID = "Ricaroni";
+const char* WIFI_SSID = "KCLabRouter";
 const char* WIFI_PASSWORD = "Ehouse2613";
 
 // Binary download URLs
@@ -404,21 +404,21 @@ void performMigration() {
     //     return;
     // }
 
-    Serial.println("✓ All binaries staged in temp storage\n");
-    blinkLED(3);
-    delay(1000);
+    // Serial.println("✓ All binaries staged in temp storage\n");
+    // blinkLED(3);
+    // delay(1000);
 
-    // Step 5: Download and write TINY stage 2 finisher to OTA_0
-    Serial.println("Step 5: Writing Stage 2 finisher to OTA_0...");
-    Serial.println("NOTE: You need to build the 'migrator_stage2' app");
-    Serial.println("and serve it at: http://192.168.1.159:8700/stage2.bin");
-    Serial.println("\nPress any key when ready...");
+    // // Step 5: Download and write TINY stage 2 finisher to OTA_0
+    // Serial.println("Step 5: Writing Stage 2 finisher to OTA_0...");
+    // Serial.println("NOTE: You need to build the 'migrator_stage2' app");
+    // Serial.println("and serve it at: http://192.168.1.159:8700/stage2.bin");
+    // Serial.println("\nPress any key when ready...");
 
-    // Wait for user confirmation
-    while (!Serial.available()) {
-        delay(100);
-    }
-    while (Serial.available()) Serial.read(); // Clear buffer
+    // // Wait for user confirmation
+    // while (!Serial.available()) {
+    //     delay(100);
+    // }
+    // while (Serial.available()) Serial.read(); // Clear buffer
 
     if (!downloadAndFlash("http://api.johnson-creative.com/SmartPlugs/Migration8266/stage2.bin", ADDR_OTA_0)) {
         Serial.println("ERROR: Failed to download/write stage 2!");
