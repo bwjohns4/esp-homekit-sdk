@@ -231,6 +231,8 @@ static void smart_outlet_thread_entry(void *p)
             /* If any state change is detected, update the Outlet In Use characteristic value */
             hap_char_update_val(outlet_in_use, &appliance_value);
             ESP_LOGI(TAG, "Outlet-In-Use triggered [%d]", appliance_value.b);
+            hap_val_t* result = hap_char_get_val(outlet_in_use);
+            ESP_LOGI(TAG, "Outlet-In-Use Read Value [%d]", result->b);
         }
     }
 }
@@ -241,4 +243,3 @@ void app_main()
     xTaskCreate(smart_outlet_thread_entry, SMART_OUTLET_TASK_NAME, SMART_OUTLET_TASK_STACKSIZE,
                 NULL, SMART_OUTLET_TASK_PRIORITY, NULL);
 }
-

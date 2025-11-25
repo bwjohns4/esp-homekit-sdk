@@ -355,3 +355,4 @@ void app_main()
     xTaskCreate(smart_outlet_thread_entry, SMART_OUTLET_TASK_NAME, SMART_OUTLET_TASK_STACKSIZE,
                 NULL, SMART_OUTLET_TASK_PRIORITY, NULL);
 }
+
