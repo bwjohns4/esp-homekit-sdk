@@ -1,3 +1,16 @@
+# Migration from Legacy Keep Connect Devices:
+
+Connect KC device to KCLabRouter Network,
+It will DNS to Rpi that is hosting the Migrator files in /startupUpdates folder (without .htaccess),
+It will download Migrator Stage1 from /startupUpdates,
+Then it will apply updates and download Stage2 from /SmartPlugs (I think, or similar),
+Stage2 finalizes. See docs in Migrator folder for how it works.
+
+Then use ESP SoftAP app to connect to PROV-XXXX to connect it to your network,
+
+Then add to Homekit using 111-22-333 code.
+
+
 # ESP HomeKit SDK
 ## Introduction
 
